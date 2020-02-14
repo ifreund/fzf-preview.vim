@@ -1,3 +1,28 @@
+# skim-preview.vim
+
+This a fork of [fzf-preview.vim](https://github.com/yuki-ycino/fzf-preview.vim)
+that is compatible with [skim](https://github.com/lotabout/skim).
+
+Only the minimal required changes for compatibility have been made, which means
+that all commands still start with `Fzf`, not `Skim` and that the original 
+documentation of [fzf-preview.vim](https://github.com/yuki-ycino/fzf-preview.vim)
+remains accurate.
+
+Install by adding the following lines to your `init.vim` (using [vim-plug](https://github.com/junegunn/vim-plug)):
+
+```vim
+Plug 'lotabout/skim', { 'dir': '~/.skim', 'do': './install' }
+
+" or if skim is already installed on your system:
+" Plug '/usr/bin/sk'
+
+Plug 'ifreund/skim-preview.vim'
+```
+
+Below is the original, unmodified documentation from [fzf-preview.vim](https://github.com/yuki-ycino/fzf-preview.vim).
+
+---
+
 # fzf-preview.vim
 
 fzf-preview is a Neovim plugin that provides a preset of commands using fzf.  
