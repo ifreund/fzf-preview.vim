@@ -34,17 +34,7 @@ function! fzf_preview#util#is_project_file(file, splited_project_path) abort
   return is_project_file
 endfunction
 
-function! fzf_preview#util#uniq(list)
-  let result = []
-  for item in a:list
-    if index(result, item) == -1
-      call add(result, item)
-    endif
-  endfor
-  return result
-endfunction
-
-function! fzf_preview#util#align_lists(lists)
+function! fzf_preview#util#align_lists(lists) abort
   let maxes = {}
   for list in a:lists
     let i = 0
@@ -57,4 +47,14 @@ function! fzf_preview#util#align_lists(lists)
     call map(list, { key, v -> printf('%-' . maxes[key] . 's', v) })
   endfor
   return a:lists
+endfunction
+
+function! fzf_preview#util#uniq(list) abort
+  let result = []
+  for item in a:list
+    if index(result, item) == -1
+      call add(result, item)
+    endif
+  endfor
+  return result
 endfunction

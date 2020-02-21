@@ -78,7 +78,6 @@ Though it is different from this plugin and has a lot of functions,
 - **Python3 (Used grep preview)** (Recomended) <https://www.python.org/>
 - **ripgrep (Require FzfPreviewProjectGrep and FzfPreviewDirectoryFiles)** (Recommended) <https://github.com/BurntSushi/ripgrep>
 - neomru.vim (Require FzfPreviewProjectMruFiles and FzfPreviewMruFiles) <https://github.com/Shougo/neomru.vim>
-- vim-bookmarks (Require FzfPreviewBookmarks) <https://github.com/MattesGroeger/vim-bookmarks>
 
 #### Appearance
 
@@ -122,7 +121,9 @@ call dein#add('yuki-ycino/fzf-preview.vim')
 
 :FzfPreviewGitStatus                  " Select git status listed file
 
-:FzfPreviewBuffers                    " Select buffers
+:FzfPreviewBuffers                    " Select file buffers
+
+:FzfPreviewAllBuffers                 " Select all buffers
 
 :FzfPreviewProjectOldFiles            " Select project files from oldfiles
 
@@ -140,9 +141,11 @@ call dein#add('yuki-ycino/fzf-preview.vim')
 
 :FzfPreviewLocationList               " Select line from LocationList (Required [Python3](https://www.python.org/))
 
+:FzfPreviewLines                      " Select line from current buffer (Required [Python3](https://www.python.org/))
+
 :FzfPreviewJumps                      " Select jumplist item (Required [Python3](https://www.python.org/))
 
-:FzfPreviewBookmarks                  " Select bookmark from vim-bookmarks (Required [Python3](https://www.python.org/))
+:FzfPreviewMarks                      " Select mark (Required [Python3](https://www.python.org/))
 
 :FzfPreviewFromResources              " Select files from selected resources (project, git, directory, buffer, project_old, project_mru, old, mru)
 ```
@@ -155,6 +158,9 @@ call dein#add('yuki-ycino/fzf-preview.vim')
 " Value must be a global variable name.
 " Variable is dictionary and format is same as g:fzf_preview_custom_default_processors.
 "
+" Most commands are passed a file path to the processor function.
+" FzfPreviewAllBuffers will be passed “buffer {bufnr}”
+"
 " Value example: let g:foo_processors = {
 "                \ '':       function('fzf_preview#resource_processor#edit'),
 "                \ 'ctrl-x': function('s:foo_function'),
@@ -162,21 +168,70 @@ call dein#add('yuki-ycino/fzf-preview.vim')
 "
 
 " Example: 'bdelete!' buffers
-function! s:buffers_delete_from_paths(paths) abort
-  for path in a:paths
-    execute 'bdelete! ' . path
+
+augroup fzf_preview
+  autocmd!
+  autocmd User fzf_preview#initialized call s:fzf_preview_settings()
+augroup END
+
+function! s:fzf_preview_settings() abort
+  let g:fzf_preview_buffer_delete_processors = fzf_preview#resource_processor#get_default_processors()
+  let g:fzf_preview_buffer_delete_processors['ctrl-x'] = function('s:buffers_delete_from_lines')
+endfunction
+
+function! s:buffers_delete_from_lines(lines) abort
+  for line in a:lines
+    let matches = matchlist(line, '^buffer \(\d\+\)$')
+    if len(matches) >= 1
+      execute 'bdelete! ' . matches[1]
+    else
+      execute 'bdelete! ' . line
+    endif
   endfor
 endfunction
-let g:fzf_preview_buffer_delete_processors = fzf_preview#resource_processor#get_default_processors()
-let g:fzf_preview_buffer_delete_processors['ctrl-x'] = function('s:buffers_delete_from_paths')
 
 nnoremap <silent> <Leader>b :<C-u>FzfPreviewBuffers -processors=g:fzf_preview_buffer_delete_processors<CR>
+
+
+-fzf-arg
+" Set the arguments to be passed when executing fzf.
+" This value is added to the default options.
+" Value must be a string without spaces.
+
+" Example: Exclude filename with FzfPreviewProjectGrep
+nnoremap <Leader>g :<C-u>FzfPreviewProjectGrep -fzf-arg=--nth=3<Space>
+
+
+" EXPERIMENTAL: Specifications may change.
+-eval-fzf-args
+" Set the arguments to be passed when executing fzf.
+" Value must be a global variable name.
+" Variable is string and format is shell command options.
+" This option is experimental.
+"
+" Value example: let g:foo_arguments = '--multi --reverse --ansi --bind=ctrl-d:preview-page-down,ctrl-u:preview-page-up,?:toggle-preview'
+"
+
+" Example: Exclude filename with FzfPreviewProjectGrep
+
+augroup fzf_preview
+  autocmd!
+  autocmd User fzf_preview#initialized call s:fzf_preview_settings()
+augroup END
+
+function! s:fzf_preview_settings() abort
+  let g:fzf_preview_grep_command_options = fzf_preview#command#get_common_command_options()
+  let g:fzf_preview_grep_command_options = g:fzf_preview_grep_command_options . ' --nth=3'
+endfunction
+
+nnoremap <Leader>g :<C-u>FzfPreviewProjectGrep -eval-fzf-args=g:fzf_preview_grep_command_options<Space>
 ```
 
 ### Function
 
 ```vim
-call fzf_preview#window#create_centered_floating_window() " Function to display the floating window used by this plugin
+" Function to display the floating window used by this plugin
+call fzf_preview#window#create_centered_floating_window()
 
 " Example
 call fzf#run({
@@ -184,11 +239,26 @@ call fzf#run({
 \ 'sink':   'edit',
 \ 'window': 'call fzf_preview#window#create_centered_floating_window()',
 \ })
+
+" Get the initial value of the process executed when selecting the element of fzf
+call fzf_preview#resource_processor#get_default_processors()
+
+" Get the current value of the process executed when selecting the element of fzf
+" Use in fzf_preview#initialized event.
+call fzf_preview#resource_processor#get_processors()
+
+" EXPERIMENTAL: Specifications may change.
+" Get the common value of the passed when executed fzf.
+" Use in fzf_preview#initialized event.
+call fzf_preview#command#get_common_command_options()
 ```
 
 ## Keymap
 
 ```text
+<C-g>, <Esc>
+  Cancel fzf
+
 <C-x>
   Open split
 
@@ -239,6 +309,9 @@ let g:fzf_preview_use_floating_window = 1
 " The file name selected by fzf becomes {}
 let g:fzf_preview_command = 'head -100 {-1}'                       " Not installed bat
 " let g:fzf_preview_command = 'bat --color=always --style=grid {-1}' " Installed bat
+
+" g:fzf_binary_preview_command is executed if this command succeeds, and g:fzf_preview_command is executed if it fails
+let g:fzf_preview_if_binary_command = '[[ "$(file --mime {})" =~ binary ]]'
 
 " Commands used for binary file
 let g:fzf_binary_preview_command = 'echo "{} is a binary file"'
@@ -322,16 +395,6 @@ let g:fzf_preview_rate = 0.3
 " DEPRECATED
 " Key to toggle fzf window size of normal size and full-screen
 let g:fzf_full_preview_toggle_key = '<C-s>'
-```
-
-## Functions
-
-```vim
-" Get the initial value of the process executed when selecting the element of fzf
-call fzf_preview#resource_processor#get_default_processors()
-
-" Get the current value of the process executed when selecting the element of fzf
-call fzf_preview#resource_processor#get_processors()
 ```
 
 ## Inspiration

@@ -38,6 +38,23 @@ function! fzf_preview#resource#buffers() abort
   return fzf_preview#converter#convert_for_fzf(buffers)
 endfunction
 
+function! fzf_preview#resource#all_buffers() abort
+  let buffers = []
+  for bufinfo in copy(getbufinfo())
+    let buffer = {
+    \ 'name': fnamemodify(bufinfo['name'], ':.'),
+    \ 'bufnr': bufinfo['bufnr'],
+    \ }
+    call add(buffers, buffer)
+  endfor
+
+  let buffers = map(copy(getbufinfo({ 'buflisted': 1 })),
+  \ { _, buffer -> [buffer['bufnr'], fnamemodify(buffer['name'], ':.')] }
+  \ )
+
+  return map(copy(fzf_preview#util#align_lists(buffers)), { _, buffer -> join(buffer, '  ') })
+endfunction
+
 function! fzf_preview#resource#project_oldfiles() abort
   if !fzf_preview#util#is_git_directory()
     return []
@@ -91,6 +108,16 @@ function! fzf_preview#resource#quickfix_or_locationlist(type) abort
   endif
 endfunction
 
+function! fzf_preview#resource#lines() abort
+  if !filereadable(expand('%'))
+    return []
+  endif
+
+  let lines = getbufline(bufnr('%'), 1, '$')
+  call map(lines, { i, line -> [i + 1, line] })
+  return map(fzf_preview#util#align_lists(lines), { _, v -> join(v, '  ') })
+endfunction
+
 function! fzf_preview#resource#grep(args) abort
   return  fzf_preview#converter#convert_for_fzf(systemlist(fzf_preview#command#grep_command(a:args)), 1)
 endfunction
@@ -102,43 +129,42 @@ function! fzf_preview#resource#buffer_tags() abort
 
   let lines = systemlist(fzf_preview#command#buffer_tags_command(expand('%')))
   let matches = map(lines, { _, line -> matchlist(line, '^\([^\t]\+\)\t\(\S\+\)\t\(\d\+\);"\t\(.\+\)') })
+  call filter(matches, {_, m -> !empty(m)})
   let lists = map(sort(matches, { a, b -> a[3] - b[3] }), { _, m -> [m[3], m[1], m[4]] })
   return map(fzf_preview#util#align_lists(lists), { _, v -> join(v, '  ') })
 endfunction
 
 function! fzf_preview#resource#jumps() abort
   let splited_project_path = split(fzf_preview#util#project_root(), '/')
+  let bufnr_and_lnum_list = map(copy(getjumplist()[0]), {
+  \ _, jump -> { 'bufnr': jump['bufnr'], 'lnum': jump['lnum'] }
+  \ })
 
-  let jumps = []
-  for jump in getjumplist()[0]
-    let bufinfos = getbufinfo(jump['bufnr'])
-    if len(bufinfos) > 0
-      let bufinfo = bufinfos[0]
-      let file = bufinfo['name']
+  let result = s:bufnr_and_lnum_to_lines(bufnr_and_lnum_list, splited_project_path)
 
-      if fzf_preview#util#is_project_file(file, splited_project_path) && filereadable(file)
-        let info = {}
-        let file = fnamemodify(file, ':.')
-        let line_number = jump['lnum']
-        let lines = getbufline(bufname(jump['bufnr']), jump['lnum'])
-
-        if len(lines) > 0
-          let text = lines[0]
-        else
-          let text = ''
-        endif
-
-        call add(jumps, file . ':' . line_number . ':' . text)
-      endif
-    endif
-  endfor
-
-  call reverse(jumps)
-  return fzf_preview#converter#convert_for_fzf(jumps, 1)
+  call reverse(result)
+  return fzf_preview#converter#convert_for_fzf(result, 1)
 endfunction
 
-function! fzf_preview#resource#bookmarks() abort
-  return fzf_preview#converter#convert_for_fzf(filter(map(bm#location_list(), { _, b -> s:bookmarks_format_line(b) }), { _, b -> b !=# '' }), 1)
+function! fzf_preview#resource#marks() abort
+  let splited_project_path = split(fzf_preview#util#project_root(), '/')
+
+  let chars = [
+  \ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+  \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+  \ 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+  \ 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+  \ ]
+
+  let bufnr_and_lnum_list = map(map(copy(chars), {
+  \ _, char -> getpos("'" . char)
+  \ }), {
+  \ _, pos -> { 'bufnr': pos[0] == 0 ? bufnr('%') : pos[0], 'lnum': pos[1] }
+  \ })
+  call filter(bufnr_and_lnum_list, { _, bufnr_and_lnum -> bufnr_and_lnum['lnum'] != 0 })
+
+  let result = s:bufnr_and_lnum_to_lines(bufnr_and_lnum_list, splited_project_path)
+  return fzf_preview#converter#convert_for_fzf(result, 1)
 endfunction
 
 function! fzf_preview#resource#files_from_resources(resources) abort
@@ -173,6 +199,36 @@ function! s:filter_history_file_to_project_file(files) abort
   endfor
 
   return map(project_files, "fnamemodify(v:val, ':.')")
+endfunction
+
+function! s:bufnr_and_lnum_to_lines(bufnr_and_lnum_list, splited_project_path) abort
+  let result = []
+  for bufnr_and_lnum in a:bufnr_and_lnum_list
+    let bufnr = bufnr_and_lnum['bufnr']
+    let lnum = bufnr_and_lnum['lnum']
+    let bufinfos = getbufinfo(bufnr)
+
+    if len(bufinfos) > 0
+      let bufinfo = bufinfos[0]
+      let file = bufinfo['name']
+
+      if fzf_preview#util#is_project_file(file, a:splited_project_path) && filereadable(file)
+        let file = fnamemodify(file, ':.')
+        let line_number = lnum
+        let lines = getbufline(bufname(bufnr), lnum)
+
+        if len(lines) > 0
+          let text = lines[0]
+        else
+          let text = ''
+        endif
+
+        call add(result, file . ':' . line_number . ':' . text)
+      endif
+    endif
+  endfor
+
+  return result
 endfunction
 
 function! s:get_quickfix_or_locationlist_lines(type) abort
@@ -215,27 +271,4 @@ function! s:open_process_with_qf_and_close(type, F) abort
   endif
 
   return result
-endfunction
-
-function! s:bookmarks_format_line(line) abort
-  let line = split(a:line, ':')
-  let filename = fnamemodify(line[0], ':.')
-  if !filereadable(filename)
-    return ''
-  endif
-
-  let line_number = line[1]
-  let text = line[2]
-
-  if text ==# 'Annotation'
-    let comment = line[3]
-  else
-    let text = join(line[2:], ':')
-  endif
-
-  if text !=# 'Annotation'
-    return filename . ':' . line_number . ':' . text
-  else
-    return filename . ':' . line_number . ':' . text . ':' . comment
-  endif
 endfunction
